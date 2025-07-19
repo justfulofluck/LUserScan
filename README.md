@@ -1,6 +1,6 @@
 ## 🔍 Linux User Info CLI Tool
 
-This is a **simple C-based command-line tool** that allows you to view user, group, and file permission information from a Linux system.
+This is a **C-based command-line tool** that allows you to view user, group, and file permission information from a Linux system.
 
 ### ✅ Features:
 
