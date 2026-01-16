@@ -8,6 +8,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <time.h>
+#include <utmpx.h>
 
 // Function declarations
 void list_users();
@@ -16,6 +17,7 @@ void user_groups(const char *username);
 void file_permissions(const char *path);
 void search_user(const char *query);
 void search_group(const char *query);
+void list_logged_in_users();
 
 // Main function
 int main() {
@@ -30,7 +32,8 @@ int main() {
         printf("4. Show file or folder Permissions\n");
         printf("5. Search User (Name or UID)\n");
         printf("6. Search Group (Name or GID)\n");
-        printf("7. Exit\n");
+        printf("7. List Currently Logged-in Users\n");
+        printf("8. Exit\n");
         printf("Enter your choice: ");
 
         if (fgets(input, sizeof(input), stdin) == NULL) {
@@ -79,6 +82,9 @@ int main() {
                 search_group(input);
                 break;
             case 7:
+                list_logged_in_users();
+                break;
+            case 8:
                 printf("Goodbye!\n");
                 exit(0);
             default:
@@ -248,4 +254,26 @@ void search_group(const char *query) {
     if (!found) {
         printf("No group found matching '%s'.\n", query);
     }
+}
+
+// List currently logged-in users
+void list_logged_in_users() {
+    struct utmpx *ut;
+    printf("\n\033[1;32m--- Currently Logged-in Users ---\033[0m\n");
+    printf("\033[1m%-15s %-10s %-20s %s\033[0m\n", "User", "Line", "Host", "Login Time");
+
+    setutxent();
+    while ((ut = getutxent()) != NULL) {
+        if (ut->ut_type == USER_PROCESS) {
+            time_t login_time = ut->ut_tv.tv_sec;
+            char *time_str = ctime(&login_time);
+            if (time_str) {
+                time_str[strlen(time_str) - 1] = '\0'; // Remove newline
+            } else {
+                time_str = "Unknown";
+            }
+            printf("%-15s %-10s %-20s %s\n", ut->ut_user, ut->ut_line, ut->ut_host, time_str);
+        }
+    }
+    endutxent();
 }
