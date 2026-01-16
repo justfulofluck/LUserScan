@@ -14,6 +14,8 @@ void list_users();
 void list_groups();
 void user_groups(const char *username);
 void file_permissions(const char *path);
+void search_user(const char *query);
+void search_group(const char *query);
 
 // Main function
 int main() {
@@ -26,7 +28,9 @@ int main() {
         printf("2. List all Groups\n");
         printf("3. Show groups of a user\n");
         printf("4. Show file or folder Permissions\n");
-        printf("5. Exit\n");
+        printf("5. Search User (Name or UID)\n");
+        printf("6. Search Group (Name or GID)\n");
+        printf("7. Exit\n");
         printf("Enter your choice: ");
 
         if (fgets(input, sizeof(input), stdin) == NULL) {
@@ -63,6 +67,18 @@ int main() {
                 file_permissions(input);
                 break;
             case 5:
+                printf("Enter search query (Username or UID): ");
+                fgets(input, sizeof(input), stdin);
+                input[strcspn(input, "\n")] = 0;
+                search_user(input);
+                break;
+            case 6:
+                printf("Enter search query (Group name or GID): ");
+                fgets(input, sizeof(input), stdin);
+                input[strcspn(input, "\n")] = 0;
+                search_group(input);
+                break;
+            case 7:
                 printf("Goodbye!\n");
                 exit(0);
             default:
@@ -175,3 +191,61 @@ void file_permissions(const char *path) {
     printf("\n\n");
 }
 
+// Search for a user by name or UID
+void search_user(const char *query) {
+    struct passwd *pw;
+    int found = 0;
+    char *endptr;
+    uid_t uid = (uid_t)strtol(query, &endptr, 10);
+    int query_is_numeric = (*endptr == '\0' && strlen(query) > 0);
+
+    printf("\n\033[1;32m--- User Search Results for '%s' ---\033[0m\n", query);
+
+    setpwent();
+    while ((pw = getpwent()) != NULL) {
+        if (strcmp(pw->pw_name, query) == 0 || (query_is_numeric && pw->pw_uid == uid)) {
+            printf("Username: \033[1m%-15s\033[0m UID: %-5d Home: %s\n", pw->pw_name, pw->pw_uid, pw->pw_dir);
+            found = 1;
+            if (!query_is_numeric) break; // If searching by name, name is unique, so we can stop
+        }
+    }
+    endpwent();
+
+    if (!found) {
+        printf("No user found matching '%s'.\n", query);
+    }
+}
+
+// Search for a group by name or GID
+void search_group(const char *query) {
+    struct group *gr;
+    int found = 0;
+    char *endptr;
+    gid_t gid = (gid_t)strtol(query, &endptr, 10);
+    int query_is_numeric = (*endptr == '\0' && strlen(query) > 0);
+
+    printf("\n\033[1;32m--- Group Search Results for '%s' ---\033[0m\n", query);
+
+    setgrent();
+    while ((gr = getgrent()) != NULL) {
+        if (strcmp(gr->gr_name, query) == 0 || (query_is_numeric && gr->gr_gid == gid)) {
+            printf("Group: \033[1m%-15s\033[0m GID: %-5d ", gr->gr_name, gr->gr_gid);
+            printf("Members: ");
+            if (gr->gr_mem[0]) {
+                for (int i = 0; gr->gr_mem[i] != NULL; i++) {
+                    printf("%s ", gr->gr_mem[i]);
+                }
+            } else {
+                printf("None");
+            }
+            printf("\n");
+            found = 1;
+            if (!query_is_numeric) break;
+        }
+    }
+    endgrent();
+
+    if (!found) {
+        printf("No group found matching '%s'.\n", query);
+    }
+}
