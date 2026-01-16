@@ -13,6 +13,8 @@
 #include <utmpx.h>
 #include <ftw.h>
 #include <sys/resource.h>
+#include <dirent.h>
+#include <ctype.h>
 
 // Function declarations
 void list_users();
@@ -24,6 +26,7 @@ void search_user(const char *query);
 void search_group(const char *query);
 void list_logged_in_users();
 void show_system_limits();
+void list_user_processes(const char *username);
 
 // Main function
 int main() {
@@ -40,7 +43,8 @@ int main() {
         printf("6. Search Group (Name or GID)\n");
         printf("7. List Currently Logged-in Users\n");
         printf("8. Show System Resource Limits\n");
-        printf("9. Exit\n");
+        printf("9. List Processes for a User\n");
+        printf("10. Exit\n");
         printf("Enter your choice: ");
 
         if (fgets(input, sizeof(input), stdin) == NULL) {
@@ -95,6 +99,12 @@ int main() {
                 show_system_limits();
                 break;
             case 9:
+                printf("Enter username: ");
+                fgets(input, sizeof(input), stdin);
+                input[strcspn(input, "\n")] = 0;
+                list_user_processes(input);
+                break;
+            case 10:
                 printf("Goodbye!\n");
                 exit(0);
             default:
@@ -350,5 +360,55 @@ void show_system_limits() {
         } else {
             perror("getrlimit");
         }
+    }
+}
+
+// List all running processes for a specific user
+void list_user_processes(const char *username) {
+    struct passwd *pw = getpwnam(username);
+    if (!pw) {
+        printf("User not found: %s\n", username);
+        return;
+    }
+
+    DIR *proc = opendir("/proc");
+    if (!proc) {
+        perror("opendir /proc");
+        return;
+    }
+
+    struct dirent *entry;
+    printf("\n\033[1;32m--- Processes for user '%s' (UID: %d) ---\033[0m\n", username, pw->pw_uid);
+    printf("\033[1m%-10s %s\033[0m\n", "PID", "Command");
+
+    int found = 0;
+    while ((entry = readdir(proc)) != NULL) {
+        // Only look at directories that are numbers (PIDs)
+        if (!isdigit(entry->d_name[0])) continue;
+
+        char path[512];
+        struct stat st;
+        snprintf(path, sizeof(path), "/proc/%s", entry->d_name);
+
+        if (stat(path, &st) == 0 && st.st_uid == pw->pw_uid) {
+            // Get process name from /proc/[pid]/comm
+            char comm_path[512];
+            char comm[256] = "Unknown";
+            snprintf(comm_path, sizeof(comm_path), "/proc/%s/comm", entry->d_name);
+            FILE *f = fopen(comm_path, "r");
+            if (f) {
+                if (fgets(comm, sizeof(comm), f)) {
+                    comm[strcspn(comm, "\n")] = 0;
+                }
+                fclose(f);
+            }
+            printf("%-10s %s\n", entry->d_name, comm);
+            found = 1;
+        }
+    }
+    closedir(proc);
+
+    if (!found) {
+        printf("No running processes found for user '%s'.\n", username);
     }
 }
