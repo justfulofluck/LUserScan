@@ -1,4 +1,6 @@
 
+#define _XOPEN_SOURCE 500
+#define _DEFAULT_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -9,15 +11,19 @@
 #include <unistd.h>
 #include <time.h>
 #include <utmpx.h>
+#include <ftw.h>
+#include <sys/resource.h>
 
 // Function declarations
 void list_users();
 void list_groups();
 void user_groups(const char *username);
 void file_permissions(const char *path);
+long long calculate_directory_size(const char *path);
 void search_user(const char *query);
 void search_group(const char *query);
 void list_logged_in_users();
+void show_system_limits();
 
 // Main function
 int main() {
@@ -33,7 +39,8 @@ int main() {
         printf("5. Search User (Name or UID)\n");
         printf("6. Search Group (Name or GID)\n");
         printf("7. List Currently Logged-in Users\n");
-        printf("8. Exit\n");
+        printf("8. Show System Resource Limits\n");
+        printf("9. Exit\n");
         printf("Enter your choice: ");
 
         if (fgets(input, sizeof(input), stdin) == NULL) {
@@ -85,6 +92,9 @@ int main() {
                 list_logged_in_users();
                 break;
             case 8:
+                show_system_limits();
+                break;
+            case 9:
                 printf("Goodbye!\n");
                 exit(0);
             default:
@@ -162,6 +172,21 @@ void user_groups(const char *username) {
     free(groups);
 }
 
+// Helper for recursive directory size
+static long long total_dir_size = 0;
+int dir_size_callback(const char *fpath, const struct stat *sb, int typeflag, struct FTW *ftwbuf) {
+    total_dir_size += sb->st_size;
+    return 0;
+}
+
+long long calculate_directory_size(const char *path) {
+    total_dir_size = 0;
+    if (nftw(path, dir_size_callback, 64, FTW_PHYS) == -1) {
+        return -1;
+    }
+    return total_dir_size;
+}
+
 // Show file/directory permission details
 void file_permissions(const char *path) {
     struct stat filestat;
@@ -173,16 +198,26 @@ void file_permissions(const char *path) {
 
     printf("\n\033[1;32m--- File Information ---\033[0m\n");
     printf("Path: \033[1m%s\033[0m\n", path);
-    printf("Size: %ld bytes\n", (long)filestat.st_size);
-    printf("Owner UID: %d\n", filestat.st_uid);
-    printf("Group GID: %d\n", filestat.st_gid);
-    printf("Last modified: %s", ctime(&filestat.st_mtime));
 
     printf("File Type: ");
     if (S_ISREG(filestat.st_mode)) printf("Regular File\n");
     else if (S_ISDIR(filestat.st_mode)) printf("Directory\n");
     else if (S_ISLNK(filestat.st_mode)) printf("Symbolic Link\n");
     else printf("Other\n");
+
+    if (S_ISDIR(filestat.st_mode)) {
+        long long rec_size = calculate_directory_size(path);
+        if (rec_size != -1) {
+            printf("Recursive Directory Size: \033[1m%lld\033[0m bytes\n", rec_size);
+        }
+        printf("Directory Entry Size: %ld bytes\n", (long)filestat.st_size);
+    } else {
+        printf("Size: \033[1m%ld\033[0m bytes\n", (long)filestat.st_size);
+    }
+
+    printf("Owner UID: %d\n", filestat.st_uid);
+    printf("Group GID: %d\n", filestat.st_gid);
+    printf("Last modified: %s", ctime(&filestat.st_mtime));
 
     printf("Permissions: ");
     printf((filestat.st_mode & S_IRUSR) ? "r" : "-");
@@ -276,4 +311,44 @@ void list_logged_in_users() {
         }
     }
     endutxent();
+}
+
+// Show system resource limits (ulimit)
+void show_system_limits() {
+    struct rlimit limit;
+    const char *limit_names[] = {
+        "Max open files",
+        "Max processes",
+        "Max stack size",
+        "Max core file size",
+        "Max address space",
+        "Max file size"
+    };
+    int resources[] = {
+        RLIMIT_NOFILE,
+        RLIMIT_NPROC,
+        RLIMIT_STACK,
+        RLIMIT_CORE,
+        RLIMIT_AS,
+        RLIMIT_FSIZE
+    };
+
+    printf("\n\033[1;32m--- System Resource Limits ---\033[0m\n");
+    printf("\033[1m%-25s %-20s %-20s\033[0m\n", "Resource", "Soft Limit", "Hard Limit");
+
+    for (int i = 0; i < 6; i++) {
+        if (getrlimit(resources[i], &limit) == 0) {
+            char soft[32], hard[32];
+
+            if (limit.rlim_cur == RLIM_INFINITY) strcpy(soft, "unlimited");
+            else sprintf(soft, "%lu", (unsigned long)limit.rlim_cur);
+
+            if (limit.rlim_max == RLIM_INFINITY) strcpy(hard, "unlimited");
+            else sprintf(hard, "%lu", (unsigned long)limit.rlim_max);
+
+            printf("%-25s %-20s %-20s\n", limit_names[i], soft, hard);
+        } else {
+            perror("getrlimit");
+        }
+    }
 }
